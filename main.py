@@ -7,115 +7,81 @@ TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "@oollkz"
 
 def make_thumb():
-    for name in ["music_cover.JPG", "music_cover.jpg", "base.jpg"]:
+    for name in ["music_cover.JPG", "music_cover.jpg"]:
         if os.path.exists(name):
             img = Image.open(name).convert("RGB")
-            img = img.resize((320, 320))
-            img.save("thumb.jpg", quality=95)
+            w,h = img.size
+            m = min(w,h)
+            img = img.crop(((w-m)//2, (h-m)//2, (w-m)//2+m, (h-m)//2+m))
+            img = img.resize((320,320))
+            img.save("thumb.jpg", quality=80, optimize=True)
             return "thumb.jpg"
     return None
 
-def clean_name(name: str):
-    if not name: return "Track"
-    for ext in [".mp3",".wav",".m4a",".flac",".ogg",".MP3",".WAV",".WAV"]:
-        if name.lower().endswith(ext.lower()):
-            name = name[:-len(ext)]
-    return name.strip()
+def clean(s):
+    if not s: return ""
+    s = s.strip()
+    for ext in [".wav",".mp3",".m4a",".flac",".ogg"]:
+        if s.lower().endswith(ext):
+            s = s[:-len(ext)]
+    return s.strip()
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    audio = msg.audio or msg.document
+    audio = update.message.audio or update.message.document
     if not audio: return
 
-    raw_title = msg.audio.title if msg.audio and msg.audio.title else audio.file_name
-    raw_performer = msg.audio.performer if msg.audio and msg.audio.performer else "oollkz"
+    title = clean(audio.file_name or "Track")
+    performer = "oollkz"
+    if update.message.audio:
+        if update.message.audio.title: title = clean(update.message.audio.title)
+        if update.message.audio.performer: performer = clean(update.message.audio.performer)
 
-    title = clean_name(raw_title)
-    performer = clean_name(raw_performer)
     if " - " in title and performer == "oollkz":
-        p = title.split(" - ", 1)
-        performer, title = p[0].strip(), p[1].strip()
+        a,b = title.split(" - ",1)
+        performer, title = a.strip(), b.strip()
 
-    # Сақтап қоямыз
-    context.user_data["last_audio"] = {
-        "file_id": audio.file_id,
-        "title": title,
-        "performer": performer
-    }
+    context.user_data["last"] = (audio.file_id, title, performer)
 
-    thumb_path = make_thumb()
-    
-    # Саған превью
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Каналға жіберу", callback_data="publish")],
-        [InlineKeyboardButton("❌ Болдырмау", callback_data="cancel")],
+    thumb = make_thumb()
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Каналға жіберу", callback_data="go")],
+        [InlineKeyboardButton("❌ Болдырмау", callback_data="no")],
         [InlineKeyboardButton("oolkz", url="https://t.me/oollkz")]
     ])
 
-    if thumb_path:
-        with open(thumb_path, 'rb') as t:
-            await context.bot.send_audio(
-                chat_id=update.effective_chat.id,
-                audio=audio.file_id,
-                thumbnail=t,
-                title=title,
-                performer=performer,
-                caption=f"Превью: {performer} - {title}\nФото: өз фотоңмен",
-                reply_markup=keyboard
-            )
+    if thumb:
+        with open(thumb,'rb') as t:
+            await context.bot.send_audio(update.effective_chat.id, audio.file_id, thumbnail=t, title=title, performer=performer, caption="", reply_markup=kb)
     else:
-        await msg.reply_text("⚠️ Фото табылмады! music_cover.JPG жүктелмеген", reply_markup=keyboard)
+        await context.bot.send_audio(update.effective_chat.id, audio.file_id, title=title, performer=performer, caption="", reply_markup=kb)
 
-async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    data = context.user_data.get("last_audio")
-    if not data:
-        await query.edit_message_text("Файл табылмады, қайта жібер")
+async def on_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if q.data == "no":
+        await q.delete_message()
         return
-
-    if query.data == "cancel":
-        await query.edit_message_text("❌ Болдырылмады")
-        return
-
-    if query.data == "publish":
-        thumb_path = make_thumb()
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("oolkz", url="https://t.me/oollkz")]
-        ])
-        if thumb_path:
-            with open(thumb_path, 'rb') as t:
-                await context.bot.send_audio(
-                    chat_id=CHANNEL,
-                    audio=data["file_id"],
-                    thumbnail=t,
-                    title=data["title"],
-                    performer=data["performer"],
-                    caption="",
-                    reply_markup=keyboard
-                )
-        else:
-            await context.bot.send_audio(
-                chat_id=CHANNEL,
-                audio=data["file_id"],
-                title=data["title"],
-                performer=data["performer"],
-                caption="",
-                reply_markup=keyboard
-            )
-        await query.edit_message_text(f"✅ Каналға кетті: {data['performer']} - {data['title']}")
+    file_id, title, performer = context.user_data.get("last", (None,None,None))
+    if not file_id: return
+    thumb = make_thumb()
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("oolkz", url="https://t.me/oollkz")]])
+    if thumb:
+        with open(thumb,'rb') as t:
+            await context.bot.send_audio(CHANNEL, file_id, thumbnail=t, title=title, performer=performer, caption="", reply_markup=kb)
+    else:
+        await context.bot.send_audio(CHANNEL, file_id, title=title, performer=performer, caption="", reply_markup=kb)
+    await q.edit_message_text(f"✅ Каналға кетті: {performer} - {title}")
 
 app = Application.builder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.AUDIO | filters.Document.ALL, handle_audio))
-app.add_handler(CallbackQueryHandler(on_button))
+app.add_handler(CallbackQueryHandler(on_btn))
 
 from flask import Flask
-flask_app = Flask(__name__)
-@flask_app.route('/')
-def home(): return "Bot live"
+f = Flask(__name__)
+@f.route('/')
+def h(): return "ok"
 
 if __name__ == '__main__':
     import threading
-    threading.Thread(target=lambda: flask_app.run(host='0.0.0.0', port=10000)).start()
+    threading.Thread(target=lambda: f.run(host='0.0.0.0', port=10000)).start()
     app.run_polling()
