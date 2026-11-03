@@ -10,7 +10,7 @@ from PIL import Image
 
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL = "@oollkz"
-# .JPG, .jpg екеуін де таниды
+
 def find_cover():
     for name in ["music_cover.JPG", "music_cover.jpg", "music_cover.jpeg", "music_cover.png"]:
         if os.path.exists(name):
@@ -19,8 +19,12 @@ def find_cover():
 
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def home(): return "oolkz live"
-def run_flask(): flask_app.run(host='0.0.0.0', port=10000)
+def home(): 
+    return "oolkz live"
+
+def run_flask(): 
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host='0.0.0.0', port=port)
 
 def get_cover():
     path = find_cover()
@@ -88,7 +92,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(path): os.remove(path)
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.AUDIO | filters.Document.AUDIO, handle_audio))
-    app.run_polling()
+    if not TOKEN:
+        print("BOT_TOKEN табылмады!")
+    else:
+        threading.Thread(target=run_flask, daemon=True).start()
+        bot_app = Application.builder().token(TOKEN).build()
+        bot_app.add_handler(MessageHandler(filters.AUDIO | filters.Document.AUDIO, handle_audio))
+        bot_app.run_polling()
