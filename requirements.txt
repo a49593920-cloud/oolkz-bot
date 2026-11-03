@@ -1,6 +1,0 @@
-python-telegram-bot
-Flask
-Pillow
-mutagen
-yt-dlp
-requests
